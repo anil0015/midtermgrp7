@@ -1,0 +1,41 @@
+import json, os, uuid
+import azure.functions as func
+from azure.cosmos import CosmosClient
+
+
+app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
+
+
+COSMOS_CONN = os.environ["CosmosDbConnectionString"]
+client = CosmosClient.from_connection_string(COSMOS_CONN)
+
+
+DB_NAME = "appdb"
+CONTAINER_NAME = "items"
+
+
+@app.route(route="items", methods=["GET", "POST"])
+def items_api(req: func.HttpRequest) -> func.HttpResponse:
+    try:
+        db = client.get_database_client(DB_NAME)
+        container = db.get_container_client(CONTAINER_NAME)
+
+
+        if req.method == "POST":
+            try:
+                item = req.get_json()
+            except ValueError:
+                return func.HttpResponse("Invalid JSON", status_code=400)
+            if "id" not in item:
+                item["id"] = str(uuid.uuid4())
+            container.create_item(item)
+            return func.HttpResponse(json.dumps({"id": item["id"]}), mimetype="application/json", status_code=201)
+
+
+        # GET: retrieve all
+        items = list(container.read_all_items())
+        return func.HttpResponse(json.dumps(items), mimetype="application/json", status_code=200)
+
+
+    except Exception as e:
+        return func.HttpResponse(f"Error: {e}", status_code=500)
